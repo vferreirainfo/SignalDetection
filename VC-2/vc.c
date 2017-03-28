@@ -25,6 +25,7 @@
 
 
 
+
 int vc_rgb_to_gray(IVC *src, IVC *dst)
 {
 	unsigned char *datasrc = (unsigned char *)src->data;
