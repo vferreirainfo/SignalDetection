@@ -24,6 +24,173 @@
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
+int vc_binary_erode(IVC *src, IVC *dst, int kernel)
+{
+	unsigned char *datasrc = (unsigned char *)src->data;
+	unsigned char *datadst = (unsigned char *)dst->data;
+	int width = src->width;
+	int height = src->height;
+	int bytesperline = src->bytesperline;
+	int channels = src->channels;
+	int x, y;
+	int xx, yy;
+	int xxyymax = (int)floor(((double)kernel) / 2.0);
+	int xxyymin = -xxyymax;
+	int max, min;
+	long int pos, posk;
+	unsigned char threshold;
+
+	// Verifica??o de erros
+	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
+	if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return 0;
+	if (channels != 1) return 0;
+
+	for (y = 1; y<height; y++)
+	{
+		for (x = 0; x<width; x++)
+		{
+			pos = y * bytesperline + x * channels;
+
+			int cont = 0;
+
+
+			// NxM Vizinhos
+			for (yy = xxyymin; yy <= xxyymax; yy++)
+			{
+				for (xx = xxyymin; xx <= xxyymax; xx++)
+				{
+					if ((y + yy >= 0) && (y + yy < height) && (x + xx >= 0) && (x + xx < width))
+					{
+						posk = (y + yy) * bytesperline + (x + xx) * channels;
+
+						if (datasrc[posk] == 0)
+						{
+							cont++;
+						}
+
+						
+					}
+					if (xx == xxyymax)
+						break;
+				}
+				if (yy == xxyymax)
+					break;
+				
+			}
+
+			if (cont != 0)
+			{
+				datadst[pos] = 0;
+			}
+
+			else
+			{
+				datadst[pos] = 255;
+			}
+
+		}
+	}
+	return 1;
+}
+
+
+int vc_binary_dilate(IVC *src, IVC *dst, int kernel)
+{
+	unsigned char *datasrc = (unsigned char *)src->data;
+	unsigned char *datadst = (unsigned char *)dst->data;
+	int width = src->width;
+	int height = src->height;
+	int bytesperline = src->bytesperline;
+	int channels = src->channels;
+	int x, y;
+	int xx, yy;
+	int xxyymax = (int)floor(((double)kernel) / 2.0);
+	int xxyymin = -xxyymax;
+	int max, min;
+	long int pos, posk;
+	unsigned char threshold;
+
+	// Verifica??o de erros
+	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
+	if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return 0;
+	if (channels != 1) return 0;
+
+	for (y = 0; y<height; y++)
+	{
+		for (x = 0; x<width; x++)
+		{
+			pos = y * bytesperline + x * channels;
+
+			int cont = 0;
+
+
+			// NxM Vizinhos
+			for (yy = xxyymin; yy <= xxyymax; yy++)
+			{
+				for (xx = xxyymin; xx <= xxyymax; xx++)
+				{
+					if ((y + yy >= 0) && (y + yy < height) && (x + xx >= 0) && (x + xx < width))
+					{
+						posk = (y + yy) * bytesperline + (x + xx) * channels;
+
+						if (datasrc[posk] == 255)
+						{
+							cont++;
+						}
+
+					}
+					if (xx == xxyymax)
+						break;
+				}
+				if (yy == xxyymax)
+					break;
+			}
+
+			if (cont != 0)
+			{
+				datadst[pos] = 255;
+			}
+
+			else
+			{
+				datadst[pos] = 0;
+			}
+
+		}
+	}
+	return 1;
+}
+
+int vc_binary_open(IVC *src, IVC *dst, int sizeerode, int sizedilate)
+{
+	int ret = 1;
+
+
+	IVC *tmp = vc_image_new(src->width, src->height, src->channels, src->levels);
+
+	ret &= vc_binary_erode(src, tmp, sizeerode);
+	ret &= vc_binary_dilate(src, dst, sizedilate);
+
+	vc_image_free(tmp);
+
+	return ret;
+}
+
+int vc_binary_close(IVC *src, IVC *dst, int sizeerode, int sizedilate)
+{
+	int ret = 1;
+
+
+	IVC *tmp = vc_image_new(src->width, src->height, src->channels, src->levels);
+
+
+	ret &= vc_binary_dilate(src, dst, sizedilate);
+	ret &= vc_binary_erode(src, tmp, sizeerode);
+
+	vc_image_free(tmp);
+
+	return ret;
+}
 
 
 int vc_rgb_to_gray(IVC *src, IVC *dst)
@@ -925,145 +1092,6 @@ int vc_rgb_to_hsv(IVC *srcdst)
 
 	}
 	*/
-
-
-	int vc_binary_dilate(IVC *src, IVC *dst, int size)
-	{
-		unsigned char *data = (unsigned char *)src->data;
-		unsigned char *datadst = (unsigned char *)dst->data;
-		int width_src, width_dst, height_src, height_dst;
-		int bytesperline = src->bytesperline;
-		width_src = src->width;
-		width_dst = dst->width;
-		height_src = src->height;
-		height_dst = dst->height;
-		int channels = src->channels;
-		int x, y, xx, yy;
-		int xxyymax = (int)floor(((double)size) / 2.0);
-		int xxyymin = -xxyymax;
-		long int pos, posk;
-
-
-		// Verifica??o de erros
-		if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
-		if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return 0;
-		if (channels != 1) return 0;
-
-
-		for (y = 0; y < height_src; y++)
-		{
-
-			for (x = 0; x < width_src; x++){
-
-				pos = y*bytesperline + x*channels;
-				int count = 0; 
-
-
-				//vizinhos
-				for(yy=xxyymin; yy<=xxyymax; yy++)
-				{
-					for (xx = xxyymin; xx <= xxyymax; xx++)
-					{
-						if ((y + yy >= 0) && (y + yy < height_src) && (x + xx >= 0) && (x + xx < width_src))
-						{
-							posk = (y + yy) * bytesperline + (x + xx)*channels;
-
-							if (data[posk] == 255)
-							{
-								count++; // incrementar 1 em 'count'	
-							}
-						}
-					}
-				}
-				if (count != 0)
-				{
-					datadst[pos] = 255; //preenche a branco
-				}
-
-				else
-				{
-					datadst[pos] = 0; // preenche a preto
-				}
-
-	
-			}
-		 
-		}
-		return 1;
-
-	}
-
-
-	int vc_binary_erode(IVC *src, IVC *dst, int kernel)
-	{
-		unsigned char *datasrc = (unsigned char *)src->data;
-		unsigned char *datadst = (unsigned char *)dst->data;
-		int widthsrc, widthdst, heightsrc, heightdst, channelssrc;
-		int bytesperline = src->bytesperline;
-		widthsrc = src->width;
-		heightsrc = src->height;
-		widthdst = dst->width;
-		heightdst = dst->height;
-		int x, y, xx, yy;
-		int xxyymax = (int)floor(((double)kernel) / 2.0); //floor de double kernel ... asim se kernel 1.7 entao será 1.0 com a funcao floor
-		int xxyymin = -xxyymax;
-		int max, min;
-		long int pos=0, posk=0;
-		unsigned char threeshold;
-
-
-		if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
-		if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return 0;
-		if (src->channels != 1) return 0;
-
-
-
-
-		for (y = 0; y<heightsrc; y++)
-		{
-			for (x = 0; x<widthsrc; x++)
-			{
-				//pos = y * bytesperline + x * channels;
-
-				int cont = 0;
-
-
-				// NxM Vizinhos
-				for (yy = xxyymin; yy <= xxyymax; yy++)
-				{
-					for (xx = xxyymin; xx <= xxyymax; xx++)
-					{
-						if ((y + yy >= 0) && (y + yy < heightsrc) && (x + xx >= 0) && (x + xx < widthsrc))
-						{
-							//posk = (y + yy) * bytesperline + (x + xx) * channels;
-
-							if (datasrc[posk] == 0)
-							{
-								cont++;
-							}
-
-						}
-					}
-				}
-
-				if (cont != 255)
-				{
-					datadst[pos] = 0;
-				}
-
-				else
-				{
-					datadst[pos] = 255;
-				}
-
-			}
-		}
-		return 1;
-
-
-
-
-	}
 
 
 
