@@ -24,138 +24,339 @@
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-int vc_binary_erode(IVC *src, IVC *dst, int kernel)
+
+int colorThreeSholding(IVC *src, IVC *dst)
 {
-	unsigned char *datasrc = (unsigned char *)src->data;
+	//parameters
+	int maxR, minR, maxB, minB;
+	int maxG, minG;
+	unsigned char *data = (unsigned char *)src->data;
+	int width, height;
+	int bytesperline;
+	int channels;
+
+	width = src->width;
+	height = src->height;
+	channels = src->channels;
+	bytesperline = src->width * src->channels;
+
+
 	unsigned char *datadst = (unsigned char *)dst->data;
+	int widthDst, heightDst;
+	int bytesperlineDst, channelsDst;
+	widthDst = dst->width;
+	heightDst = dst->height;
+	channelsDst = dst->channels;
+	bytesperlineDst = dst->width * dst->channels;
+
+	int pos=0, posk=0;
+
+	//for src image
+	if ((width <= 0) || (height <= 0) || (data == NULL)) return 0;
+	if (channels != 3) return 0; // necessitamos de imagem HSV
+
+
+	//for dst image 
+	if ((widthDst <= 0) || (heightDst <= 0) || (datadst == NULL)) return 0;
+	if (channelsDst != 1) return 0; // necessitamos de escrever imagem binaria
+
+
+	//blue 
+	minR = 145; maxR = 255;
+	minG = 130; maxG = 255;
+	minB = 128; maxB = 255;
+	
+
+
+
+
+	for (int y = 0, yy=0; (y < height, yy<heightDst); y++, yy++)
+	{
+		for (int x = 0,xx=0; (x < width, xx < widthDst); x++, xx++)
+		{
+			//para cada linha
+			pos = (y*bytesperline) + (x*channels);
+			posk= (yy*bytesperlineDst) + (xx*channelsDst);
+
+
+		   //pixel do sinal azul
+			
+		   if ((data[pos] > minR && data[pos] < maxR) && (data[pos + 1] > minG && data[pos + 1] < maxG) 
+		   && (data[pos + 2] > minB && data[pos + 2] < maxB)) {
+								datadst[posk]=0;
+					}
+		   else
+		   {
+			   datadst[posk] = 255;
+		   }
+					
+		}				
+		
+	}
+	return 1;
+}
+
+
+
+
+int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs)
+{
+	unsigned char *data = (unsigned char *)src->data;
 	int width = src->width;
 	int height = src->height;
 	int bytesperline = src->bytesperline;
 	int channels = src->channels;
-	int x, y;
-	int xx, yy;
-	int xxyymax = (int)floor(((double)kernel) / 2.0);
-	int xxyymin = -xxyymax;
-	int max, min;
-	long int pos, posk;
-	unsigned char threshold;
+	int x, y, i;
+	long int pos;
+	int xmin, ymin, xmax, ymax;
+	long int sumx, sumy;
 
-	// Verifica??o de erros
+	// Verifica��o de erros
 	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
-	if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return 0;
 	if (channels != 1) return 0;
 
-	for (y = 1; y<height; y++)
+	// Conta �rea de cada blob
+	for (i = 0; i<nblobs; i++)
 	{
-		for (x = 0; x<width; x++)
+		xmin = width - 1;
+		ymin = height - 1;
+		xmax = 0;
+		ymax = 0;
+
+		sumx = 0;
+		sumy = 0;
+
+		blobs[i].area = 0;
+
+		for (y = 1; y<height - 1; y++)
 		{
-			pos = y * bytesperline + x * channels;
-
-			int cont = 0;
-
-
-			// NxM Vizinhos
-			for (yy = xxyymin; yy <= xxyymax; yy++)
+			for (x = 1; x<width - 1; x++)
 			{
-				for (xx = xxyymin; xx <= xxyymax; xx++)
+				pos = y * bytesperline + x * channels;
+
+				if (data[pos] == blobs[i].label)
 				{
-					if ((y + yy >= 0) && (y + yy < height) && (x + xx >= 0) && (x + xx < width))
+					// �rea
+					blobs[i].area++;
+
+					// Centro de Gravidade
+					sumx += x;
+					sumy += y;
+
+					// Bounding Box
+					if (xmin > x) xmin = x;
+					if (ymin > y) ymin = y;
+					if (xmax < x) xmax = x;
+					if (ymax < y) ymax = y;
+
+					// Per�metro
+					// Se pelo menos um dos quatro vizinhos n�o pertence ao mesmo label, ent�o � um pixel de contorno
+					if ((data[pos - 1] != blobs[i].label) || (data[pos + 1] != blobs[i].label) || (data[pos - bytesperline] != blobs[i].label) || (data[pos + bytesperline] != blobs[i].label))
 					{
-						posk = (y + yy) * bytesperline + (x + xx) * channels;
-
-						if (datasrc[posk] == 0)
-						{
-							cont++;
-						}
-
-						
+						blobs[i].perimeter++;
 					}
-					if (xx == xxyymax)
-						break;
 				}
-				if (yy == xxyymax)
-					break;
-				
 			}
+		}
 
-			if (cont != 0)
+		// Bounding Box
+		blobs[i].x = xmin;
+		blobs[i].y = ymin;
+		blobs[i].width = (xmax - xmin) + 1;
+		blobs[i].height = (ymax - ymin) + 1;
+
+		// Centro de Gravidade
+		blobs[i].xc = sumx / (blobs[i].area > 1 ? blobs[i].area : 1);
+		blobs[i].yc = sumy / (blobs[i].area > 1 ? blobs[i].area : 1);
+	}
+
+	return 1;
+}
+
+
+/*
+
+int checkSignalPositions(IVC *src, int *xmin, int *xmax, int *ymin, int *ymax)
+{
+	unsigned char *data = (unsigned char*)src->data;
+	int width, height, channels;
+	int bytesperline = src->bytesperline;
+	int pos;
+	int x, y;
+	int ultimaMaisPixeis, backup, colunacorrente, colunaComMaisPix;
+	int posColuna;
+
+
+
+	//Analisar imagem a procura da linha com mais pixeis pretos
+	for (x = 0; x <width; x++)
+	{
+		pos = (y*bytesperline) + (x*channels);
+		for (y = 0; y < height; x++)
+		{
+			if (data[pos] == 0)//pixel preto
+				colunacorrente++;
+			
+		}
+		if (x++)
+		{
+			ultimaMaisPixeis = colunacorrente;
+			colunacorrente = 0; // contou coluna k, entao
+			//linhaCorrente <-0 em coluna k+1
+			if (ultimaMaisPixeis > colunaComMaisPix)
 			{
-				datadst[pos] = 0;
+
+				if (backup > colunaComMaisPix)
+					colunaComMaisPix = backup;
+				else
+				{
+					colunaComMaisPix = ultimaMaisPixeis;
+					backup = colunaComMaisPix;
+
+				}
+			 
+
 			}
 
-			else
-			{
-				datadst[pos] = 255;
-			}
+			// ignoro else
 
+
+
+		}
+	}
+
+
+
+	width = src->width;
+	height = src->height;
+	channels = src->channels;
+
+	if (channels != 1) return 0;
+	if(width<=0 || height <=0)
+
+
+}
+*/
+
+int vc_binary_erode(IVC *src, IVC *dst, int kernel)
+{
+	unsigned char *datasrc = (unsigned char*)src->data;
+	int bytesperline_src = src->width * src->channels;
+	int channels_src = src->channels;
+	int width = src->width;
+	int height = src->height;
+
+	unsigned char *datadst = (unsigned char*)dst->data;
+	int bytesperline_dst = dst->width * dst->channels;
+	int channels_dst = dst->channels;
+
+	int x, y, i;
+	long int pos_src;
+
+
+	//++++++++++++++++++++++++++ CONDIÇÕES DA FUNÇÃO:  +++++++++++++++++++++++++++
+
+	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
+	if ((src->width != dst->width) || (src->height != dst->height)) return 0;
+	if ((src->channels != 1) || (dst->channels != 1)) return 0;
+
+
+	//++++++++++++++++++++++++++ AUMENTA A COR PRETA:  ++++++++++++++++++++++++++
+
+	//PREENCHE OS REBORDOS DA IMAGEM DESTINO
+	for (i = 0; i < kernel / 2; i++)
+	{
+		for (y = 0; y < height; y++)
+		{
+			datadst[(y * bytesperline_src) + i] = 0;
+			datadst[(y * bytesperline_src) + (width - (i + 1))] = 0;
+		}
+
+		for (x = 0; x < width; x++)
+		{
+			datadst[x + (bytesperline_src * i)] = 0;
+			datadst[x + (bytesperline_src * (height - (i + 1)))] = 0;
+		}
+	}
+
+	//DILATA AS ÁREAS PRETAS:
+	for (y = (kernel / 2); y < height - (kernel / 2); y++)
+	{
+		for (x = (kernel / 2); x < width - (kernel / 2); x++)
+		{
+			pos_src = y*bytesperline_src + x;
+
+			//ATRIBUI ZERO PARA EXECUTAR A FUNÇÃO "AND" NAS LINHAS SEGUINTES
+			datadst[pos_src] = 255; //Atribui valor um para executar a função "and" nas linhas seguintes
+
+									// "AND": datadatadst[pos_src] = datadatadst[pos_src] and datasrc[pos_src - 1]
+			datadst[pos_src] &= datasrc[pos_src - 1];
+			datadst[pos_src] &= datasrc[pos_src + 1];
+			datadst[pos_src] &= datasrc[pos_src - width];
+			datadst[pos_src] &= datasrc[pos_src + width];
 		}
 	}
 	return 1;
 }
 
 
+//+++++ Segmentação de imagem: DILATAÇÃO & EROSÃO ++++++++++++++++
 int vc_binary_dilate(IVC *src, IVC *dst, int kernel)
 {
-	unsigned char *datasrc = (unsigned char *)src->data;
-	unsigned char *datadst = (unsigned char *)dst->data;
+	unsigned char *datasrc = (unsigned char*)src->data;
+	int bytesperline_src = src->width * src->channels;
+	int channels_src = src->channels;
 	int width = src->width;
 	int height = src->height;
-	int bytesperline = src->bytesperline;
-	int channels = src->channels;
-	int x, y;
-	int xx, yy;
-	int xxyymax = (int)floor(((double)kernel) / 2.0);
-	int xxyymin = -xxyymax;
-	int max, min;
-	long int pos, posk;
-	unsigned char threshold;
 
-	// Verifica??o de erros
+	unsigned char *datadst = (unsigned char*)dst->data;
+	int bytesperline_dst = dst->width * dst->channels;
+	int channels_dst = dst->channels;
+
+	int x, y, i;
+	long int pos_src;
+
+
+	//++++++++++++++++++++++++++ CONDIÇÕES DA FUNÇÃO:  +++++++++++++++++++++++++++
+
 	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
-	if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return 0;
-	if (channels != 1) return 0;
+	if ((src->width != dst->width) || (src->height != dst->height)) return 0;
+	if ((src->channels != 1) || (dst->channels != 1)) return 0;
 
-	for (y = 0; y<height; y++)
+
+	//++++++++++++++++++++++++++ AUMENTA A COR BRANCA:  ++++++++++++++++++++++++++
+
+	//PREENCHE OS REBORDOS DA IMAGEM DESTINO
+	for (i = 0; i < kernel / 2; i++)
 	{
-		for (x = 0; x<width; x++)
+		for (y = 0; y < height; y++)
 		{
-			pos = y * bytesperline + x * channels;
+			datadst[(y * bytesperline_src) + i] = 0;
+			datadst[(y * bytesperline_src) + (width - (i + 1))] = 0;
+		}
 
-			int cont = 0;
+		for (x = 0; x < width; x++)
+		{
+			datadst[x + (bytesperline_src * i)] = 0;
+			datadst[x + (bytesperline_src * (height - (i + 1)))] = 0;
+		}
+	}
 
+	//DILATA AS ÁREAS BRANCAS:
+	for (y = (kernel / 2); y < height - (kernel / 2); y++)
+	{
+		for (x = (kernel / 2); x < width - (kernel / 2); x++)
+		{
+			pos_src = y*bytesperline_src + x;
 
-			// NxM Vizinhos
-			for (yy = xxyymin; yy <= xxyymax; yy++)
-			{
-				for (xx = xxyymin; xx <= xxyymax; xx++)
-				{
-					if ((y + yy >= 0) && (y + yy < height) && (x + xx >= 0) && (x + xx < width))
-					{
-						posk = (y + yy) * bytesperline + (x + xx) * channels;
+			//ATRIBUI ZERO PARA EXECUTAR A FUNÇÃO "OR" NAS LINHAS SEGUINTES
+			datadst[pos_src] = 0; //Atribui zero para executar a função or nas linhas seguintes
 
-						if (datasrc[posk] == 255)
-						{
-							cont++;
-						}
-
-					}
-					if (xx == xxyymax)
-						break;
-				}
-				if (yy == xxyymax)
-					break;
-			}
-
-			if (cont != 0)
-			{
-				datadst[pos] = 255;
-			}
-
-			else
-			{
-				datadst[pos] = 0;
-			}
-
+								  // "OR" : datadatadst[pos_src] = datadatadst[pos_src] or datasrc[pos_src - 1]
+			datadst[pos_src] |= datasrc[pos_src - 1];
+			datadst[pos_src] |= datasrc[pos_src + 1];
+			datadst[pos_src] |= datasrc[pos_src - width];
+			datadst[pos_src] |= datasrc[pos_src + width];
 		}
 	}
 	return 1;
@@ -187,11 +388,10 @@ int vc_binary_close(IVC *src, IVC *dst, int sizeerode, int sizedilate)
 	ret &= vc_binary_dilate(src, dst, sizedilate);
 	ret &= vc_binary_erode(src, tmp, sizeerode);
 
-	vc_image_free(tmp);
+	//vc_image_free(tmp);
 
 	return ret;
 }
-
 
 int vc_rgb_to_gray(IVC *src, IVC *dst)
 {
@@ -255,8 +455,8 @@ int vc_gray_to_binary_midpoint(IVC *src, IVC *dst, int kernel)
 	if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return 0;
 	if (channels != 1) return 0;
 
-	for (y = 0; y<height; y++)//y=0 ...
 	{
+	for (y = 0; y<height; y++)//y=0 ...
 		for (x = 0; x<width; x++)//x=0 ...
 		{
 			pos = y * bytesperline + x * channels;
@@ -292,11 +492,18 @@ int vc_gray_to_binary_midpoint(IVC *src, IVC *dst, int kernel)
 
 
 
+
+
+
 // Etiquetagem de blobs
 // src		: Imagem bin�ria
 // dst		: Imagem grayscale (ir� conter as etiquetas)
 // nlabels	: Endere�o de mem�ria de uma vari�vel inteira. Recebe o n�mero de etiquetas encontradas.
 // OVC*		: Retorna lista de estruturas de blobs (objectos), com respectivas etiquetas. � necess�rio libertar posteriormente esta mem�ria.
+
+
+
+
 OVC* vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels)
 {
 	unsigned char *datasrc = (unsigned char *)src->data;
@@ -501,151 +708,6 @@ OVC* vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels)
 
 	return blobs;
 }
-
-
-
-
-
-
-// Etiquetagem de blobs
-// src		: Imagem bin�ria
-// dst		: Imagem grayscale (ir� conter as etiquetas)
-// nlabels	: Endere�o de mem�ria de uma vari�vel inteira. Recebe o n�mero de etiquetas encontradas.
-// OVC*		: Retorna lista de estruturas de blobs (objectos), com respectivas etiquetas. � necess�rio libertar posteriormente esta mem�ria.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs)
-{
-	unsigned char *data = (unsigned char *)src->data;
-	int width = src->width;
-	int height = src->height;
-	int bytesperline = src->bytesperline;
-	int channels = src->channels;
-	int x, y, i;
-	long int pos;
-	int xmin, ymin, xmax, ymax;
-	long int sumx, sumy;
-
-	// Verifica��o de erros
-	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
-	if (channels != 1) return 0;
-
-	// Conta �rea de cada blob
-	for (i = 0; i<nblobs; i++)
-	{
-		xmin = width - 1;
-		ymin = height - 1;
-		xmax = 0;
-		ymax = 0;
-
-		sumx = 0;
-		sumy = 0;
-
-		blobs[i].area = 0;
-
-		for (y = 1; y<height - 1; y++)
-		{
-			for (x = 1; x<width - 1; x++)
-			{
-				pos = y * bytesperline + x * channels;
-
-				if (data[pos] == blobs[i].label)
-				{
-					// �rea
-					blobs[i].area++;
-
-					// Centro de Gravidade
-					sumx += x;
-					sumy += y;
-
-					// Bounding Box
-					if (xmin > x) xmin = x;
-					if (ymin > y) ymin = y;
-					if (xmax < x) xmax = x;
-					if (ymax < y) ymax = y;
-
-					// Per�metro
-					// Se pelo menos um dos quatro vizinhos n�o pertence ao mesmo label, ent�o � um pixel de contorno
-					if ((data[pos - 1] != blobs[i].label) || (data[pos + 1] != blobs[i].label) || (data[pos - bytesperline] != blobs[i].label) || (data[pos + bytesperline] != blobs[i].label))
-					{
-						blobs[i].perimeter++;
-					}
-				}
-			}
-		}
-
-		// Bounding Box
-		blobs[i].x = xmin;
-		blobs[i].y = ymin;
-		blobs[i].width = (xmax - xmin) + 1;
-		blobs[i].height = (ymax - ymin) + 1;
-
-		// Centro de Gravidade
-		blobs[i].xc = sumx / (blobs[i].area > 1 ? blobs[i].area : 1);
-		blobs[i].yc = sumy / (blobs[i].area > 1 ? blobs[i].area : 1);
-	}
-
-	return 1;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1339,6 +1401,64 @@ void bit_to_unsigned_char(unsigned char *databit, unsigned char *datauchar, int 
 }
 
 
+int convert_rgbbw_to_purebinary(IVC *src, IVC *dst)
+{
+	unsigned char *datasrc = (unsigned char *)src->data;
+	unsigned char *datadst = (unsigned char *)dst->data;
+	int width, widthdst, height, heightdst;
+	int bytesperline, channels;
+	int bytesperlinedst, channelsdst;
+
+
+	width = src->width;
+	widthdst = dst->width;
+	height = src->height;
+	heightdst = dst->height;
+
+	channels = src->channels;
+	channelsdst = dst->channels;
+
+	bytesperline = src->bytesperline;
+	bytesperlinedst = dst->bytesperline;
+
+
+
+
+	int x=0, y=0;
+	int xx=0, yy = 0;
+	int pos, posK;
+
+
+
+	//verificar erros
+
+	if ((width <= 0) || (widthdst <= 0) || (height <= 0) || (heightdst <= 0))return 0;
+	if ((datasrc == NULL) || (datadst == NULL))return 0;
+	if ((channels != 3) || (channelsdst != 1))return 0;
+
+	for(y, yy; (y<height && yy<heightdst); y++, yy++)
+		{	
+		for (x, xx; (x < width && xx<widthdst); x++, xx++)
+			{
+				 // estará bem aqui ??
+				 pos = (y*bytesperline) + (x*channels);
+				 posK = (yy*bytesperlinedst) + (xx*channelsdst);
+				 if (datasrc[pos] == 0 && datasrc[pos + 1] == 0 && datasrc[pos + 2] == 0)// pixel preto
+					{
+						datadst[posK] = 0;
+					}
+				 else if (datasrc[pos] == 255 && datasrc[pos + 1] == 255 && datasrc[pos + 2] == 255)
+					{
+						datadst[posK] = 255;
+					}
+			}
+		}
+			
+	return 1;
+}
+
+
+
 IVC *vc_read_image(char *filename)
 {
 	FILE *file = NULL;
@@ -1457,6 +1577,8 @@ IVC *vc_read_image(char *filename)
 	
 	return image;
 }
+
+
 
 
 int vc_write_image(char *filename, IVC *image)
